@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Password Brute‑Force Visualizer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>Password Brute‑Force Visualizer</h1>
+      <p class="subtitle">
+        Visualise how computers systematically guess passwords using brute force
+      </p>
+    </header>
+    <main class="main">
+      <section class="controls glass">
+        <div class="control-group">
+          <label for="passwordInput">Target Password</label>
+          <input
+            id="passwordInput"
+            type="text"
+            value="ABC"
+            maxlength="10"
+            autocomplete="off"
+          />
+        </div>
+        <div class="control-group">
+          <label for="charsetSelect">Character Set</label>
+          <select id="charsetSelect">
+            <option value="demo">A–C (Demo)</option>
+            <option value="alpha">A–Z</option>
+            <option value="numeric">0–9</option>
+            <option value="alphanumeric">A–Z + 0–9</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="speedRange">Animation Speed</label>
+          <input
+            id="speedRange"
+            type="range"
+            min="1"
+            max="10"
+            value="5"
+          />
+          <span id="speedValue" class="speed-value">5×</span>
+        </div>
+        <div class="buttons">
+          <button id="startButton" class="btn primary">Start</button>
+          <button id="pauseButton" class="btn secondary" disabled>
+            Pause
+          </button>
+          <button id="resetButton" class="btn danger">Reset</button>
+        </div>
+      </section>
+      <section class="visualization">
+        <svg id="gearSvg" class="gear-svg" xmlns="http://www.w3.org/2000/svg">
+          <!-- gears will be injected here -->
+        </svg>
+      </section>
+      <section class="dashboard glass">
+        <div class="dashboard-row">
+          <div class="dash-label">Target:</div>
+          <div id="targetDisplay" class="dash-value">ABC</div>
+        </div>
+        <div class="dashboard-row">
+          <div class="dash-label">Current Attempt:</div>
+          <div id="currentAttempt" class="dash-value">–</div>
+        </div>
+        <div class="dashboard-row">
+          <div class="dash-label">Attempts Made:</div>
+          <div id="totalAttempts" class="dash-value">0</div>
+        </div>
+        <div class="dashboard-row">
+          <div class="dash-label">Status:</div>
+          <div id="status" class="dash-value">Idle</div>
+        </div>
+        <div class="dashboard-row">
+          <div class="dash-label">Progress:</div>
+          <div class="progress-container">
+            <div class="progress-bar" id="progressBar">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <span id="progressPercent" class="progress-percent">0%</span>
+          </div>
+        </div>
+        <div class="dashboard-row">
+          <div class="dash-label">ETA:</div>
+          <div id="eta" class="dash-value">∞</div>
+        </div>
+      </section>
+    </main>
+    <footer class="footer">
+      <p>
+        This tool is for educational purposes only. It demonstrates how brute force
+        attacks grow exponentially with password length and character set size.
+      </p>
+    </footer>
+    <script src="script.js"></script>
+  </body>
+</html>
