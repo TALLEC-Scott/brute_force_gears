@@ -286,6 +286,11 @@ class BruteForceVisualizer {
     this.totalCombinations = 0n;
     this.running = false;
     this.lastTime = 0;
+    // Accumulated visual rotation for gear 0 (degrees). All other gears are
+    // derived from this via the mechanical constraint θ_i = dir_i × θ_0 × N_0/N_i.
+    // Keeping it separate from attemptCount avoids the stroboscopic effect that
+    // occurs when the rotation per frame is close to a multiple of 180°.
+    this.visualGearAngle = 0;
 
     // Gear data
     this.gears = [];
@@ -455,6 +460,7 @@ class BruteForceVisualizer {
   reset() {
     this.running = false;
     this.attemptCount = 0n;
+    this.visualGearAngle = 0;
     this.statusDisplay.textContent = 'Idle';
     this.startButton.disabled = false;
     this.pauseButton.disabled = true;
@@ -501,6 +507,12 @@ class BruteForceVisualizer {
       // Not yet correct, advance attempt
       this.attemptCount++;
     }
+    // Advance visual gear rotation at a speed-proportional rate, capped to keep
+    // rotation per frame below ~90° so the direction of spin remains perceptible.
+    // (At high attempt counts the raw attempt-mod formula caused a stroboscopic
+    // effect because gear 0 would jump ~150° per frame, appearing stationary.)
+    const visualRate = Math.min(this.speed * 6, 90); // °/frame for gear 0
+    this.visualGearAngle += visualRate;
     // Update UI after processing attempts
     this.updateDashboard();
     this.updateGearOrientations();
@@ -571,24 +583,41 @@ class BruteForceVisualizer {
   }
 
   /**
-   * Compute and apply the rotation for each gear and update its label.
-   * Gear 0 (leftmost, largest) shows the most significant digit; gear n‑1
-   * (rightmost, smallest) shows the least significant digit — matching the
-   * left-to-right reading order of the attempt string in the dashboard.
+   * Compute and apply the rotation for each gear and update its hub label.
+   *
+   * For teeth to mesh correctly as the gears turn, adjacent gears must satisfy
+   * the mechanical constraint θ_{i+1} = −θ_i × (N_i / N_{i+1}).  It can be
+   * shown that rotating gear i by direction_i × attemptCount × (360 / N_i)
+   * satisfies this for every adjacent pair simultaneously:
+   *
+   *   −θ_i × (N_i/N_{i+1})
+   *     = −(dir_i × count × 360/N_i) × (N_i/N_{i+1})
+   *     = −dir_i × count × 360/N_{i+1}
+   *     =  dir_{i+1} × count × 360/N_{i+1}   (since dir_{i+1} = −dir_i)
+   *     = θ_{i+1}  ✓
+   *
+   * Hub labels are updated from the brute-force digit values independently.
    */
   updateGearOrientations() {
     if (this.gears.length === 0) return;
-    const base = this.charSet.length;
     const n = this.gears.length;
-    // digits[0] = LSB, digits[n-1] = MSB.
-    const digits = bigIntToBase(this.attemptCount, BigInt(base), n);
+    const N0 = this.gears[0].teeth;
+
+    // Rotation is driven by visualGearAngle (accumulated smoothly in the loop)
+    // rather than raw attemptCount.  All gears satisfy the mechanical constraint:
+    //   θ_i = dir_i × visualGearAngle × (N_0 / N_i)
+    // so teeth mesh correctly as they turn, while the rotation speed stays
+    // visually perceptible at every simulation speed setting.
     for (let i = 0; i < n; i++) {
-      // Gear 0 (leftmost, smallest, fastest) → LSB (digits[0]).
-      const digit = digits[i];
-      const angle = this.gears[i].direction * digit * (360 / base);
-      const normalized = ((angle % 360) + 360) % 360;
-      this.gears[i].setRotation(normalized);
-      this.gears[i].setLabel(this.charSet[digit]);
+      const gear = this.gears[i];
+      const rawAngle = gear.direction * this.visualGearAngle * (N0 / gear.teeth);
+      gear.setRotation(((rawAngle % 360) + 360) % 360);
+    }
+
+    // Labels come from the brute-force digit decomposition, not the rotation.
+    const digits = bigIntToBase(this.attemptCount, BigInt(this.charSet.length), n);
+    for (let i = 0; i < n; i++) {
+      this.gears[i].setLabel(this.charSet[digits[i]]);
     }
   }
 }
