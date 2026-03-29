@@ -205,6 +205,13 @@ main {
   font-family: monospace;
 }
 
+.charset-warning {
+  display: none;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--danger-color);
+}
+
 .footer {
   padding: 1rem;
   text-align: center;
@@ -212,14 +219,3 @@ main {
   color: var(--secondary-color);
 }
 
-/* Utility class for darkening colors; using CSS variables via filter is unreliable,
-   so we define lighten/darken via relative alpha on hover using separate classes. */
-.btn.primary:hover:not(:disabled) {
-  filter: brightness(0.95);
-}
-.btn.secondary:hover:not(:disabled) {
-  filter: brightness(0.95);
-}
-.btn.danger:hover:not(:disabled) {
-  filter: brightness(0.95);
-}

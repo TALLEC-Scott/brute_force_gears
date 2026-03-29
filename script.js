@@ -214,6 +214,7 @@ class BruteForceVisualizer {
     this.progressFill = document.getElementById('progressFill');
     this.progressPercent = document.getElementById('progressPercent');
     this.etaDisplay = document.getElementById('eta');
+    this.charsetWarning = document.getElementById('charsetWarning');
 
     // Attack state
     this.charSet = CHARSETS[this.charsetSelect.value];
@@ -246,11 +247,20 @@ class BruteForceVisualizer {
    * rebuilds the gears and resets the attack state.
    */
   onConfigChange() {
-    // Update internal settings
-    this.target = this.passwordInput.value.toUpperCase();
-    // Convert to uppercase because our charsets are uppercase; maintain only valid characters
-    this.passwordInput.value = this.target;
+    // Uppercase because all charsets are uppercase
+    const rawValue = this.passwordInput.value.toUpperCase();
     this.charSet = CHARSETS[this.charsetSelect.value];
+    // Filter to only characters present in the selected charset
+    const filtered = Array.from(rawValue).filter(c => this.charSet.includes(c)).join('');
+    this.passwordInput.value = filtered;
+    // Warn the user if any characters were stripped due to charset mismatch
+    if (filtered.length < rawValue.length) {
+      this.charsetWarning.textContent = 'Some characters were removed — not in the selected charset.';
+      this.charsetWarning.style.display = 'block';
+    } else {
+      this.charsetWarning.style.display = 'none';
+    }
+    this.target = filtered;
     this.totalCombinations = bigPow(BigInt(this.charSet.length), this.target.length);
     this.attemptCount = 0n;
     this.updateDashboard();
@@ -440,8 +450,11 @@ class BruteForceVisualizer {
     // Display current candidate string
     const attemptString = this.computeAttemptString();
     this.currentAttemptDisplay.textContent = attemptString;
-    // Attempts made
-    this.totalAttemptsDisplay.textContent = this.attemptCount.toString();
+    // Attempts made — abbreviate if the number is too large to display cleanly
+    const attemptStr = this.attemptCount.toString();
+    this.totalAttemptsDisplay.textContent = attemptStr.length > 15
+      ? `${attemptStr.slice(0, 6)}… (${attemptStr.length} digits)`
+      : attemptStr;
     // Progress percentage (integer)
     if (this.totalCombinations > 0n) {
       const percent = (this.attemptCount * 100n) / this.totalCombinations;
