@@ -337,9 +337,8 @@ class BruteForceVisualizer {
     if (length === 0) {
       return;
     }
-    // Determine base sizes. Gears are ordered largest-first (left = MSB = slowest)
-    // so that the most significant digit sits on the biggest gear, matching the
-    // natural left-to-right reading direction of the attempt string.
+    // Determine base sizes. Gears are ordered smallest-first (left = LSB = fastest)
+    // so the leftmost gear increments first and the attempt string reads left-to-right.
     const baseOuter = 40;
     const teeth = 12;
     // Phase offsets derived from the 40 % tooth / 60 % gap profile:
@@ -350,8 +349,8 @@ class BruteForceVisualizer {
     const PHASE_ODD  = -6;
     let currentX = 0;
     for (let i = 0; i < length; i++) {
-      // Largest gear on the left (index 0), smallest on the right (index length-1).
-      const outerRadius = baseOuter + (length - 1 - i) * 8;
+      // Smallest gear on the left (index 0), largest on the right (index length-1).
+      const outerRadius = baseOuter + i * 8;
       const innerRadius = outerRadius - 10;
       const pitchRadius = (outerRadius + innerRadius) / 2;
       // Pitch-circle tangency: tooth tips of each gear reach to the root of its neighbour.
@@ -489,9 +488,9 @@ class BruteForceVisualizer {
     if (this.target.length === 0) return '';
     const base = BigInt(this.charSet.length);
     const digits = bigIntToBase(this.attemptCount, base, this.target.length);
-    // Map digits to characters; digits array indexes correspond to positions
+    // Build left-to-right: gear 0 (leftmost, fastest) = digits[0] = first character.
     let str = '';
-    for (let i = digits.length - 1; i >= 0; i--) {
+    for (let i = 0; i < digits.length; i++) {
       str += this.charSet[digits[i]];
     }
     return str;
@@ -555,8 +554,8 @@ class BruteForceVisualizer {
     // digits[0] = LSB, digits[n-1] = MSB.
     const digits = bigIntToBase(this.attemptCount, BigInt(base), n);
     for (let i = 0; i < n; i++) {
-      // Map gear i (left = 0) to its digit: gear 0 → MSB (digits[n-1]).
-      const digit = digits[n - 1 - i];
+      // Gear 0 (leftmost, smallest, fastest) → LSB (digits[0]).
+      const digit = digits[i];
       const angle = this.gears[i].direction * digit * (360 / base);
       const normalized = ((angle % 360) + 360) % 360;
       this.gears[i].setRotation(normalized);
