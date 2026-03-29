@@ -251,7 +251,7 @@ class BruteForceVisualizer {
     this.progressFill = document.getElementById('progressFill');
     this.progressPercent = document.getElementById('progressPercent');
     this.etaDisplay = document.getElementById('eta');
-    this.etaLabel = this.etaDisplay.previousElementSibling;
+
     this.charsetWarning = document.getElementById('charsetWarning');
 
     // Attack state
@@ -522,13 +522,11 @@ class BruteForceVisualizer {
       this.progressPercent.textContent = '0%';
       this.progressFill.style.width = '0%';
     }
-    // Estimated time — average before start, remaining while running
+    // ETA based on average case: expect to find the password halfway through
+    // the remaining combinations, not at the very end (worst case).
     const attemptsPerSecond = this.speed * 60;
     if (this.totalCombinations > 0n && this.totalCombinations > this.attemptCount) {
-      // Before start: use average (half total); while running: use actual remaining
-      const combsForEstimate = this.running
-        ? this.totalCombinations - this.attemptCount
-        : this.totalCombinations / 2n;
+      const combsForEstimate = (this.totalCombinations - this.attemptCount) / 2n;
       const maxForEstimate = 1000000000000n;
       if (combsForEstimate > maxForEstimate) {
         this.etaDisplay.textContent = '∞';
@@ -536,10 +534,8 @@ class BruteForceVisualizer {
         const seconds = Number(combsForEstimate) / attemptsPerSecond;
         this.etaDisplay.textContent = formatDuration(seconds);
       }
-      this.etaLabel.textContent = this.running ? 'ETA:' : 'Avg ETA:';
     } else {
       this.etaDisplay.textContent = '–';
-      this.etaLabel.textContent = 'ETA:';
     }
     // Target display always shows current target
     this.targetDisplay.textContent = this.target || '–';
