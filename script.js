@@ -326,11 +326,16 @@ class BruteForceVisualizer {
       this.gears.push(gear);
       this.gearSvg.appendChild(gear.element);
     }
-    // Resize SVG view box based on total width
+    // Resize SVG view box based on total width and actual gear extents.
+    // Gears are centred at y=90; the viewBox top must account for large gears
+    // that extend above y=0, and the bottom must reach 90 + maxRadius.
     const totalWidth = currentX + this.gears[this.gears.length - 1].outerRadius;
     const maxRadius = Math.max(...this.gears.map((g) => g.outerRadius));
-    const height = maxRadius * 2 + 20;
-    this.gearSvg.setAttribute('viewBox', `0 0 ${totalWidth + 20} ${height}`);
+    const gearCenterY = 90;
+    const padding = 10;
+    const viewTop = Math.min(0, gearCenterY - maxRadius - padding);
+    const viewHeight = gearCenterY + maxRadius + padding - viewTop;
+    this.gearSvg.setAttribute('viewBox', `0 ${viewTop} ${totalWidth + 20} ${viewHeight}`);
   }
 
   /**
