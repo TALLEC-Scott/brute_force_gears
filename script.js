@@ -125,10 +125,11 @@ class Gear {
 
   /**
    * Generate the SVG path for a gear with realistic tooth‑and‑gap geometry.
-   * Each tooth is trapezoidal (slightly narrower at the tip than at the root)
-   * and occupies 50 % of the tooth pitch; the remaining 50 % is an open gap.
-   * The gap is drawn as an SVG arc along the root circle so the base of the
-   * gear body is smooth between teeth.
+   * Each tooth is trapezoidal and occupies 40 % of the tooth pitch; the
+   * remaining 60 % is an open gap drawn as an arc along the root circle.
+   * Using 40 % teeth ensures that even when adjacent gears differ in size the
+   * narrower gear's tooth arc is always shorter than the wider gear's gap arc,
+   * so teeth never visually collide with each other.
    *
    * @returns {string}
    */
@@ -143,20 +144,18 @@ class Gear {
 
     for (let i = 0; i < this.teeth; i++) {
       const a = i * step;
-      // Trapezoidal tooth: spans 50 % of the pitch angle.
-      // The tip (outer arc) is slightly narrower than the root for a bevel effect.
+      // 40 % tooth with a slight bevel (5 % of pitch) on each flank.
       const aInL  = a;                // root leading edge
-      const aOutL = a + step * 0.05; // tip  leading edge (bevelled in)
-      const aOutR = a + step * 0.45; // tip  trailing edge
-      const aInR  = a + step * 0.5;  // root trailing edge
-      // The gap arc runs from aInR to the root leading edge of the next tooth.
-      const aNext = (i + 1) * step;
+      const aOutL = a + step * 0.05; // tip  leading edge
+      const aOutR = a + step * 0.35; // tip  trailing edge
+      const aInR  = a + step * 0.40; // root trailing edge
+      const aNext = (i + 1) * step;  // start of next tooth (end of gap arc)
 
       if (i === 0) pts.push(`M${pt(ri, aInL)}`);
       pts.push(`L${pt(ro, aOutL)}`);
       pts.push(`L${pt(ro, aOutR)}`);
       pts.push(`L${pt(ri, aInR)}`);
-      // Clockwise arc along the root circle through the gap (always < 180°, so large-arc=0).
+      // Clockwise arc along root circle through the 60 % gap (always < 180°).
       pts.push(`A${ri},${ri} 0 0,1 ${pt(ri, aNext)}`);
     }
     pts.push('Z');
@@ -164,28 +163,52 @@ class Gear {
   }
 
   /**
-   * Create the SVG group element for this gear, including the path and
-   * optionally a central circle to visually anchor the gear.
+   * Create the SVG group element for the rotating gear body (path + hub
+   * circle). The character label is a separate non‑rotating element stored
+   * in this.labelElement so that it stays upright as the gear spins.
    *
    * @returns {SVGGElement}
    */
   createElement() {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    // Generate gear path
     const pathElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     pathElement.setAttribute('d', this.generatePath());
     pathElement.setAttribute('fill', '#ffffff');
     pathElement.setAttribute('stroke', '#8fa9c9');
     pathElement.setAttribute('stroke-width', '1');
     group.appendChild(pathElement);
-    // Optional centre circle
+    // Hub circle — slightly larger than before to comfortably frame the label.
     const centre = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     centre.setAttribute('cx', this.x.toString());
     centre.setAttribute('cy', this.y.toString());
-    centre.setAttribute('r', (this.innerRadius * 0.4).toString());
+    centre.setAttribute('r', (this.innerRadius * 0.55).toString());
     centre.setAttribute('fill', '#2a6f97');
     group.appendChild(centre);
+
+    // Non-rotating label — appended to the SVG directly in buildGears so it
+    // sits above all gear bodies in the z-order.
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', this.x.toString());
+    label.setAttribute('y', this.y.toString());
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('dominant-baseline', 'central');
+    label.setAttribute('font-size', Math.round(this.innerRadius * 0.5).toString());
+    label.setAttribute('font-family', 'monospace');
+    label.setAttribute('font-weight', 'bold');
+    label.setAttribute('fill', '#ffffff');
+    label.setAttribute('pointer-events', 'none');
+    this.labelElement = label;
+
     return group;
+  }
+
+  /**
+   * Update the character shown on the gear hub.
+   *
+   * @param {string} char Single character to display
+   */
+  setLabel(char) {
+    this.labelElement.textContent = char;
   }
 
   /**
@@ -316,31 +339,31 @@ class BruteForceVisualizer {
     if (length === 0) {
       return;
     }
-    // Determine base sizes
+    // Determine base sizes. Gears are ordered largest-first (left = MSB = slowest)
+    // so that the most significant digit sits on the biggest gear, matching the
+    // natural left-to-right reading direction of the attempt string.
     const baseOuter = 40;
-    const baseInner = 30;
     const teeth = 12;
-    // With 12 teeth and a 50/50 duty cycle, gap centres fall at i*30°+22.5°.
-    // The nearest gap to 0° (contact point) is at 352.5°, offset by −7.5°.
-    // Shifting even gears by +7.5° centres a gap at the contact point;
-    // shifting odd gears by −7.5° centres a tooth at their contact point,
-    // so tooth tips interlock with gaps across the mesh line.
-    const phaseStep = 360 / teeth / 2 / 2; // 7.5°
+    // Phase offsets derived from the 40 % tooth / 60 % gap profile:
+    //   gap centre  = (i + 0.70) * step  →  nearest to   0° is gap 11 at 351°  → +9° to align
+    //   tooth centre = (i + 0.20) * step  →  nearest to 180° is tooth 6 at 186° → -6° to align
+    // Even gears get +9° (gap at both contact points), odd gears get -6° (tooth at both).
+    const PHASE_EVEN = 9;
+    const PHASE_ODD  = -6;
     let currentX = 0;
     for (let i = 0; i < length; i++) {
-      // Radii increase slightly for each subsequent gear
-      const outerRadius = baseOuter + i * 8;
+      // Largest gear on the left (index 0), smallest on the right (index length-1).
+      const outerRadius = baseOuter + (length - 1 - i) * 8;
       const innerRadius = outerRadius - 10;
       const pitchRadius = (outerRadius + innerRadius) / 2;
-      // Position gears so their pitch circles are tangent: tooth tips of each
-      // gear reach exactly to the root circle of the neighbouring gear.
+      // Pitch-circle tangency: tooth tips of each gear reach to the root of its neighbour.
       if (i === 0) {
         currentX = outerRadius;
       } else {
         const prevGear = this.gears[i - 1];
         currentX += prevGear.pitchRadius + pitchRadius;
       }
-      const phaseOffset = i % 2 === 0 ? phaseStep : -phaseStep;
+      const phaseOffset = i % 2 === 0 ? PHASE_EVEN : PHASE_ODD;
       const gear = new Gear({
         teeth,
         outerRadius,
@@ -352,6 +375,10 @@ class BruteForceVisualizer {
       });
       this.gears.push(gear);
       this.gearSvg.appendChild(gear.element);
+    }
+    // Append labels after all gear bodies so they render on top.
+    for (const gear of this.gears) {
+      this.gearSvg.appendChild(gear.labelElement);
     }
     // Resize SVG view box based on total width and actual gear extents.
     // Gears are centred at y=90; the viewBox top must account for large gears
@@ -520,27 +547,24 @@ class BruteForceVisualizer {
   }
 
   /**
-   * Compute and apply the rotation for each gear based on the current
-   * attempt count and the selected character set length. The least
-   * significant gear (position 0) rotates fastest; each subsequent gear
-   * rotates charSet.length times slower. Directions alternate to
-   * simulate meshing.
+   * Compute and apply the rotation for each gear and update its label.
+   * Gear 0 (leftmost, largest) shows the most significant digit; gear n‑1
+   * (rightmost, smallest) shows the least significant digit — matching the
+   * left-to-right reading order of the attempt string in the dashboard.
    */
   updateGearOrientations() {
     if (this.gears.length === 0) return;
     const base = this.charSet.length;
-    // Convert the current attempt into base‑n digits. We use the same helper
-    // as for computing the candidate string; digits[0] corresponds to the
-    // least significant position, digits[i] to position i.
-    const digits = bigIntToBase(this.attemptCount, BigInt(base), this.gears.length);
-    for (let i = 0; i < this.gears.length; i++) {
-      const digit = digits[i];
-      // Each increment of a digit corresponds to a step of 360/base degrees.
+    const n = this.gears.length;
+    // digits[0] = LSB, digits[n-1] = MSB.
+    const digits = bigIntToBase(this.attemptCount, BigInt(base), n);
+    for (let i = 0; i < n; i++) {
+      // Map gear i (left = 0) to its digit: gear 0 → MSB (digits[n-1]).
+      const digit = digits[n - 1 - i];
       const angle = this.gears[i].direction * digit * (360 / base);
-      // Normalise angle to within 0–360 to prevent large transforms from
-      // accumulating floating point error.
       const normalized = ((angle % 360) + 360) % 360;
       this.gears[i].setRotation(normalized);
+      this.gears[i].setLabel(this.charSet[digit]);
     }
   }
 }
