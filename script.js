@@ -228,6 +228,7 @@ class BruteForceVisualizer {
     this.progressFill = document.getElementById('progressFill');
     this.progressPercent = document.getElementById('progressPercent');
     this.etaDisplay = document.getElementById('eta');
+    this.etaLabel = this.etaDisplay.previousElementSibling;
     this.charsetWarning = document.getElementById('charsetWarning');
 
     // Attack state
@@ -295,6 +296,7 @@ class BruteForceVisualizer {
   onSpeedChange() {
     this.speed = parseInt(this.speedRange.value, 10);
     this.speedValue.textContent = `${this.speed}×`;
+    this.updateDashboard();
   }
 
   /**
@@ -494,22 +496,24 @@ class BruteForceVisualizer {
       this.progressPercent.textContent = '0%';
       this.progressFill.style.width = '0%';
     }
-    // Estimated time remaining
-    if (this.running && this.totalCombinations > this.attemptCount) {
-      const remaining = this.totalCombinations - this.attemptCount;
-      // attempts per second ~ speed * 60 (approximate 60fps)
-      const attemptsPerSecond = this.speed * 60;
-      // When remaining is very large, converting to Number can overflow. Use a threshold.
-      // If remaining exceeds 1e12, display infinity.
-      const maxRemainingForEstimate = 1000000000000n;
-      if (remaining > maxRemainingForEstimate) {
+    // Estimated time — average before start, remaining while running
+    const attemptsPerSecond = this.speed * 60;
+    if (this.totalCombinations > 0n && this.totalCombinations > this.attemptCount) {
+      // Before start: use average (half total); while running: use actual remaining
+      const combsForEstimate = this.running
+        ? this.totalCombinations - this.attemptCount
+        : this.totalCombinations / 2n;
+      const maxForEstimate = 1000000000000n;
+      if (combsForEstimate > maxForEstimate) {
         this.etaDisplay.textContent = '∞';
       } else {
-        const seconds = Number(remaining) / attemptsPerSecond;
+        const seconds = Number(combsForEstimate) / attemptsPerSecond;
         this.etaDisplay.textContent = formatDuration(seconds);
       }
+      this.etaLabel.textContent = this.running ? 'ETA:' : 'Avg ETA:';
     } else {
-      this.etaDisplay.textContent = '∞';
+      this.etaDisplay.textContent = '–';
+      this.etaLabel.textContent = 'ETA:';
     }
     // Target display always shows current target
     this.targetDisplay.textContent = this.target || '–';
