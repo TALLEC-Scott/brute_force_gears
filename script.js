@@ -104,49 +104,63 @@ class Gear {
    * @param {number} options.x x‑coordinate for the gear centre
    * @param {number} options.y y‑coordinate for the gear centre
    * @param {number} options.direction Rotation direction: 1 for clockwise, -1 for counterclockwise
+   * @param {number} options.phaseOffset Static angular offset (degrees) applied on top of the
+   *   dynamic rotation so that teeth of adjacent gears align with each other's gaps at rest.
    */
-  constructor({ teeth, outerRadius, innerRadius, x, y, direction }) {
+  constructor({ teeth, outerRadius, innerRadius, x, y, direction, phaseOffset = 0 }) {
     this.teeth = teeth;
     this.outerRadius = outerRadius;
     this.innerRadius = innerRadius;
+    // The pitch radius is the midpoint between root and tip; adjacent gears are
+    // positioned so their pitch circles are tangent, which makes the tooth tips
+    // of each gear reach exactly to the root circle of its neighbour.
+    this.pitchRadius = (outerRadius + innerRadius) / 2;
     this.x = x;
     this.y = y;
     this.direction = direction;
+    this.phaseOffset = phaseOffset;
     this.angle = 0;
     this.element = this.createElement();
   }
 
   /**
-   * Generate the SVG path string for a simplistic gear shape. Each tooth is
-   * represented as a triangular wedge from the inner radius to the outer
-   * radius. While not mechanically perfect, this shape captures the key
-   * characteristics of gears in an easily computed form.
+   * Generate the SVG path for a gear with realistic tooth‑and‑gap geometry.
+   * Each tooth is trapezoidal (slightly narrower at the tip than at the root)
+   * and occupies 50 % of the tooth pitch; the remaining 50 % is an open gap.
+   * The gap is drawn as an SVG arc along the root circle so the base of the
+   * gear body is smooth between teeth.
    *
    * @returns {string}
    */
   generatePath() {
-    const points = [];
-    const toothAngle = (2 * Math.PI) / this.teeth;
+    const pts = [];
+    const step = (2 * Math.PI) / this.teeth;
+    const ri = this.innerRadius;
+    const ro = this.outerRadius;
+
+    const pt = (r, a) =>
+      `${(r * Math.cos(a) + this.x).toFixed(3)},${(r * Math.sin(a) + this.y).toFixed(3)}`;
+
     for (let i = 0; i < this.teeth; i++) {
-      const angle = i * toothAngle;
-      const nextAngle = angle + toothAngle;
-      // Root of the tooth at inner radius
-      const x0 = this.innerRadius * Math.cos(angle);
-      const y0 = this.innerRadius * Math.sin(angle);
-      // Tip of the tooth at mid angle
-      const midAngle = angle + toothAngle / 2;
-      const x1 = this.outerRadius * Math.cos(midAngle);
-      const y1 = this.outerRadius * Math.sin(midAngle);
-      // End of the tooth at inner radius
-      const x2 = this.innerRadius * Math.cos(nextAngle);
-      const y2 = this.innerRadius * Math.sin(nextAngle);
-      // Add commands
-      points.push(`${i === 0 ? 'M' : 'L'}${(x0 + this.x).toFixed(3)},${(y0 + this.y).toFixed(3)}`);
-      points.push(`L${(x1 + this.x).toFixed(3)},${(y1 + this.y).toFixed(3)}`);
-      points.push(`L${(x2 + this.x).toFixed(3)},${(y2 + this.y).toFixed(3)}`);
+      const a = i * step;
+      // Trapezoidal tooth: spans 50 % of the pitch angle.
+      // The tip (outer arc) is slightly narrower than the root for a bevel effect.
+      const aInL  = a;                // root leading edge
+      const aOutL = a + step * 0.05; // tip  leading edge (bevelled in)
+      const aOutR = a + step * 0.45; // tip  trailing edge
+      const aInR  = a + step * 0.5;  // root trailing edge
+      // The gap arc runs from aInR to the root leading edge of the next tooth.
+      const aNext = (i + 1) * step;
+
+      if (i === 0) pts.push(`M${pt(ri, aInL)}`);
+      pts.push(`L${pt(ro, aOutL)}`);
+      pts.push(`L${pt(ro, aOutR)}`);
+      pts.push(`L${pt(ri, aInR)}`);
+      // Clockwise arc along the root circle through the gap (always < 180°, so large-arc=0).
+      pts.push(`A${ri},${ri} 0 0,1 ${pt(ri, aNext)}`);
     }
-    points.push('Z');
-    return points.join(' ');
+    pts.push('Z');
+    return pts.join(' ');
   }
 
   /**
@@ -185,7 +199,7 @@ class Gear {
     this.angle = angle;
     this.element.setAttribute(
       'transform',
-      `rotate(${angle.toFixed(3)} ${this.x.toFixed(3)} ${this.y.toFixed(3)})`
+      `rotate(${(angle + this.phaseOffset).toFixed(3)} ${this.x.toFixed(3)} ${this.y.toFixed(3)})`
     );
   }
 }
@@ -303,25 +317,36 @@ class BruteForceVisualizer {
     // Determine base sizes
     const baseOuter = 40;
     const baseInner = 30;
+    const teeth = 12;
+    // With 12 teeth and a 50/50 duty cycle, gap centres fall at i*30°+22.5°.
+    // The nearest gap to 0° (contact point) is at 352.5°, offset by −7.5°.
+    // Shifting even gears by +7.5° centres a gap at the contact point;
+    // shifting odd gears by −7.5° centres a tooth at their contact point,
+    // so tooth tips interlock with gaps across the mesh line.
+    const phaseStep = 360 / teeth / 2 / 2; // 7.5°
     let currentX = 0;
     for (let i = 0; i < length; i++) {
       // Radii increase slightly for each subsequent gear
       const outerRadius = baseOuter + i * 8;
       const innerRadius = outerRadius - 10;
-      // Compute position: centre gears next to each other with slight overlap to simulate meshing
+      const pitchRadius = (outerRadius + innerRadius) / 2;
+      // Position gears so their pitch circles are tangent: tooth tips of each
+      // gear reach exactly to the root circle of the neighbouring gear.
       if (i === 0) {
         currentX = outerRadius;
       } else {
         const prevGear = this.gears[i - 1];
-        currentX += prevGear.outerRadius + outerRadius - 4;
+        currentX += prevGear.pitchRadius + pitchRadius;
       }
+      const phaseOffset = i % 2 === 0 ? phaseStep : -phaseStep;
       const gear = new Gear({
-        teeth: 12,
+        teeth,
         outerRadius,
         innerRadius,
         x: currentX,
         y: 90,
         direction: i % 2 === 0 ? 1 : -1,
+        phaseOffset,
       });
       this.gears.push(gear);
       this.gearSvg.appendChild(gear.element);
