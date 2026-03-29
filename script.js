@@ -371,19 +371,30 @@ class BruteForceVisualizer {
     // Module-based gear design: all gears share module m so every tooth has the
     // same arc length (π × m) and teeth of adjacent gears interlock correctly.
     //
-    //   N_i         = baseTeeth + i * 2          (teeth count grows with position)
-    //   pitchRadius = m × N / 2                  (standard relation)
-    //   outerRadius = pitchRadius + m             (addendum = 1 × m)
-    //   innerRadius = pitchRadius − 1.25 × m      (dedendum = 1.25 × m, standard clearance)
+    //   N_i         = baseTeeth × (i + 1)         (teeth grow proportionally with position)
+    //   pitchRadius = m × N / 2                   (standard relation)
+    //   outerRadius = pitchRadius + m              (addendum = 1 × m)
+    //   innerRadius = pitchRadius − 1.25 × m       (dedendum = 1.25 × m, standard clearance)
     //
-    // Adjacent gears are spaced so their pitch circles are tangent; the 0.25 m
-    // clearance gap means the tip of each gear stops exactly at the root of its
-    // neighbour — no overlap, no excessive space.
-    const m = 5;           // module (tooth-size unit)
-    const baseTeeth = 12;  // fewest teeth on the smallest (leftmost) gear
+    // Using N_i = N_0 × (i+1) means gear i has (i+1)× as many teeth as gear 0.
+    // The mechanical speed ratio is therefore ω_i = ω_0 × N_0/N_i = ω_0/(i+1):
+    // gear 1 turns at half speed, gear 2 at a third, gear 3 at a quarter, etc.
+    // Size and speed are fully coupled — the physical tooth-count ratio is the
+    // sole determinant of how fast each gear spins.
+    const m = 5;           // module (tooth-size unit; same for all gears so teeth mesh)
+    const baseTeeth = 12;  // tooth count of the smallest (leftmost, fastest) gear
+    const padding = 10;
+
+    // The largest gear (rightmost, most-significant digit) determines how tall
+    // the SVG must be. Compute its outer radius before building any gears so the
+    // shared centre-line y can be set correctly.
+    const maxN = baseTeeth * length;
+    const maxOuter = m * maxN / 2 + m;
+    const gearCenterY = maxOuter + padding;
+
     let currentX = 0;
     for (let i = 0; i < length; i++) {
-      const teeth      = baseTeeth + i * 2;
+      const teeth      = baseTeeth * (i + 1);
       const pitchRadius = m * teeth / 2;
       const outerRadius = pitchRadius + m;
       const innerRadius = pitchRadius - 1.25 * m;
@@ -402,7 +413,7 @@ class BruteForceVisualizer {
         outerRadius,
         innerRadius,
         x: currentX,
-        y: 90,
+        y: gearCenterY,
         direction: i % 2 === 0 ? 1 : -1,
         phaseOffset,
       });
@@ -413,16 +424,10 @@ class BruteForceVisualizer {
     for (const gear of this.gears) {
       this.gearSvg.appendChild(gear.labelElement);
     }
-    // Resize SVG view box based on total width and actual gear extents.
-    // Gears are centred at y=90; the viewBox top must account for large gears
-    // that extend above y=0, and the bottom must reach 90 + maxRadius.
+    // viewBox: height = 2 × (maxOuter + padding) so the largest gear fits exactly.
     const totalWidth = currentX + this.gears[this.gears.length - 1].outerRadius;
-    const maxRadius = Math.max(...this.gears.map((g) => g.outerRadius));
-    const gearCenterY = 90;
-    const padding = 10;
-    const viewTop = Math.min(0, gearCenterY - maxRadius - padding);
-    const viewHeight = gearCenterY + maxRadius + padding - viewTop;
-    this.gearSvg.setAttribute('viewBox', `0 ${viewTop} ${totalWidth + 20} ${viewHeight}`);
+    const viewHeight = 2 * (maxOuter + padding);
+    this.gearSvg.setAttribute('viewBox', `0 0 ${totalWidth + 20} ${viewHeight}`);
   }
 
   /**
@@ -511,7 +516,7 @@ class BruteForceVisualizer {
     // rotation per frame below ~90° so the direction of spin remains perceptible.
     // (At high attempt counts the raw attempt-mod formula caused a stroboscopic
     // effect because gear 0 would jump ~150° per frame, appearing stationary.)
-    const visualRate = Math.min(this.speed * 6, 90); // °/frame for gear 0
+    const visualRate = Math.min(this.speed * 0.6, 9); // °/frame for gear 0
     this.visualGearAngle += visualRate;
     // Update UI after processing attempts
     this.updateDashboard();
@@ -601,13 +606,14 @@ class BruteForceVisualizer {
   updateGearOrientations() {
     if (this.gears.length === 0) return;
     const n = this.gears.length;
-    const N0 = this.gears[0].teeth;
 
-    // Rotation is driven by visualGearAngle (accumulated smoothly in the loop)
-    // rather than raw attemptCount.  All gears satisfy the mechanical constraint:
-    //   θ_i = dir_i × visualGearAngle × (N_0 / N_i)
-    // so teeth mesh correctly as they turn, while the rotation speed stays
-    // visually perceptible at every simulation speed setting.
+    // Rotation follows directly from the mechanical coupling: the speed of each
+    // gear is inversely proportional to its tooth count.  Gear 0 (N_0 teeth)
+    // drives the train; gear i (N_i = N_0 × (i+1) teeth) rotates at
+    //   ω_i = ω_0 × N_0 / N_i = ω_0 / (i+1)
+    // so gear 1 turns at half speed, gear 2 at a third, etc.  Size and speed are
+    // fully determined by the tooth-count ratio — no separate formula needed.
+    const N0 = this.gears[0].teeth;
     for (let i = 0; i < n; i++) {
       const gear = this.gears[i];
       const rawAngle = gear.direction * this.visualGearAngle * (N0 / gear.teeth);
