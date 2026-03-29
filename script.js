@@ -37,6 +37,30 @@ const CHARSETS = {
  * @param {number} exponent
  * @returns {bigint}
  */
+/**
+ * Compute the static phase offset (degrees) that aligns a gear's teeth with
+ * the gaps of its neighbours. With a 47 % tooth / 53 % gap duty cycle the
+ * tooth tip centre falls at 0.235 of the pitch and the gap centre at 0.735.
+ *
+ * Even-indexed gears sit with a gap at every contact point (0° and 180°) so
+ * that the adjacent odd gear's tooth can slide in. Odd-indexed gears sit with
+ * a tooth at every contact point.
+ *
+ * @param {number} teeth  Number of teeth on this gear
+ * @param {boolean} gapAtContact  true → gap at 0°/180°, false → tooth there
+ * @returns {number} Phase offset in degrees
+ */
+function gearPhaseOffset(teeth, gapAtContact) {
+  const step = 360 / teeth;
+  // Even gear: shift the last gap so its centre lands on 0° (= 360°).
+  //   gap(N-1) centre without phase = (N-1 + 0.735) * step = (N-0.265) * step
+  //   required shift = 360 - (N-0.265)*step = 0.265 * step
+  // Odd gear: shift the last tooth so its centre lands on 0°.
+  //   tooth(N-1) centre without phase = (N-1 + 0.235) * step = (N-0.765) * step
+  //   required shift = 360 - (N-0.765)*step = 0.765 * step
+  return gapAtContact ? 0.265 * step : 0.765 * step;
+}
+
 function bigPow(base, exponent) {
   let result = 1n;
   for (let i = 0; i < exponent; i++) {
@@ -124,12 +148,12 @@ class Gear {
   }
 
   /**
-   * Generate the SVG path for a gear with realistic tooth‑and‑gap geometry.
-   * Each tooth is trapezoidal and occupies 40 % of the tooth pitch; the
-   * remaining 60 % is an open gap drawn as an arc along the root circle.
-   * Using 40 % teeth ensures that even when adjacent gears differ in size the
-   * narrower gear's tooth arc is always shorter than the wider gear's gap arc,
-   * so teeth never visually collide with each other.
+   * Generate the SVG path for a gear with module-correct tooth geometry.
+   * Each tooth occupies 47 % of the angular pitch with a 2.5 % bevel on
+   * each flank; the remaining 53 % is the gap. Because all gears share the
+   * same module the tooth arc length (≈ π × m) is identical across every gear,
+   * so teeth of any two adjacent gears interlock without overlap or excess
+   * clearance regardless of their size difference.
    *
    * @returns {string}
    */
@@ -144,18 +168,18 @@ class Gear {
 
     for (let i = 0; i < this.teeth; i++) {
       const a = i * step;
-      // 40 % tooth with a slight bevel (5 % of pitch) on each flank.
-      const aInL  = a;                // root leading edge
-      const aOutL = a + step * 0.05; // tip  leading edge
-      const aOutR = a + step * 0.35; // tip  trailing edge
-      const aInR  = a + step * 0.40; // root trailing edge
-      const aNext = (i + 1) * step;  // start of next tooth (end of gap arc)
+      // 47 % tooth (0 → 0.47 of pitch), bevelled at tip (0.025 inset each side).
+      const aInL  = a;                 // root leading edge
+      const aOutL = a + step * 0.025; // tip  leading edge
+      const aOutR = a + step * 0.445; // tip  trailing edge
+      const aInR  = a + step * 0.47;  // root trailing edge
+      const aNext = (i + 1) * step;   // root leading edge of next tooth
 
       if (i === 0) pts.push(`M${pt(ri, aInL)}`);
       pts.push(`L${pt(ro, aOutL)}`);
       pts.push(`L${pt(ro, aOutR)}`);
       pts.push(`L${pt(ri, aInR)}`);
-      // Clockwise arc along root circle through the 60 % gap (always < 180°).
+      // Clockwise arc along root circle through the 53 % gap (always < 180°).
       pts.push(`A${ri},${ri} 0 0,1 ${pt(ri, aNext)}`);
     }
     pts.push('Z');
@@ -339,30 +363,35 @@ class BruteForceVisualizer {
     if (length === 0) {
       return;
     }
-    // Determine base sizes. Gears are ordered smallest-first (left = LSB = fastest)
-    // so the leftmost gear increments first and the attempt string reads left-to-right.
-    const baseOuter = 40;
-    const teeth = 12;
-    // Phase offsets derived from the 40 % tooth / 60 % gap profile:
-    //   gap centre  = (i + 0.70) * step  →  nearest to   0° is gap 11 at 351°  → +9° to align
-    //   tooth centre = (i + 0.20) * step  →  nearest to 180° is tooth 6 at 186° → -6° to align
-    // Even gears get +9° (gap at both contact points), odd gears get -6° (tooth at both).
-    const PHASE_EVEN = 9;
-    const PHASE_ODD  = -6;
+    // Module-based gear design: all gears share module m so every tooth has the
+    // same arc length (π × m) and teeth of adjacent gears interlock correctly.
+    //
+    //   N_i         = baseTeeth + i * 2          (teeth count grows with position)
+    //   pitchRadius = m × N / 2                  (standard relation)
+    //   outerRadius = pitchRadius + m             (addendum = 1 × m)
+    //   innerRadius = pitchRadius − 1.25 × m      (dedendum = 1.25 × m, standard clearance)
+    //
+    // Adjacent gears are spaced so their pitch circles are tangent; the 0.25 m
+    // clearance gap means the tip of each gear stops exactly at the root of its
+    // neighbour — no overlap, no excessive space.
+    const m = 5;           // module (tooth-size unit)
+    const baseTeeth = 12;  // fewest teeth on the smallest (leftmost) gear
     let currentX = 0;
     for (let i = 0; i < length; i++) {
-      // Smallest gear on the left (index 0), largest on the right (index length-1).
-      const outerRadius = baseOuter + i * 8;
-      const innerRadius = outerRadius - 10;
-      const pitchRadius = (outerRadius + innerRadius) / 2;
-      // Pitch-circle tangency: tooth tips of each gear reach to the root of its neighbour.
+      const teeth      = baseTeeth + i * 2;
+      const pitchRadius = m * teeth / 2;
+      const outerRadius = pitchRadius + m;
+      const innerRadius = pitchRadius - 1.25 * m;
+      // Pitch-circle tangency guarantees the standard 0.25 m tip clearance.
       if (i === 0) {
         currentX = outerRadius;
       } else {
         const prevGear = this.gears[i - 1];
         currentX += prevGear.pitchRadius + pitchRadius;
       }
-      const phaseOffset = i % 2 === 0 ? PHASE_EVEN : PHASE_ODD;
+      // Phase offset computed per gear so a gap (even) or tooth (odd) sits at
+      // every contact point, matching the 47/53 tooth/gap duty cycle.
+      const phaseOffset = gearPhaseOffset(teeth, i % 2 === 0);
       const gear = new Gear({
         teeth,
         outerRadius,
